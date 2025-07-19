@@ -483,7 +483,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const dy = endY - startY;
         const angle = Math.atan2(dy, dx);
         
-        const capsuleHeight = cellHeight * 0.75; // Tighter fit
+        const capsuleHeight = cellHeight * 0.8; // Tighter fit
         const radius = capsuleHeight / 2;
         
         // Perpendicular angle for calculating offsets
@@ -516,8 +516,6 @@ document.addEventListener('DOMContentLoaded', () => {
         path.setAttribute('stroke', '#ef4444');
         path.setAttribute('stroke-width', '2.5');
         
-        // The SVG overlay and the grid element are siblings and both are positioned relative
-        // to the grid-container's padding box. No extra offset is needed.
         gridOverlay.appendChild(path);
     };
 

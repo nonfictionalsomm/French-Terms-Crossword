@@ -137,7 +137,7 @@
                 <div>
                     <h4 class="font-bold text-lg">Touch Controls:</h4>
                      <ul class="list-disc list-inside ml-4 space-y-1">
-                        <li><strong>Select:</strong> Use the drag or click-click method with your finger.</li>
+                        <li><strong>Select:</strong> Use the drag or tap-tap method with one finger.</li>
                         <li><strong>Pan Grid:</strong> Use <strong class="text-indigo-600">two fingers</strong> to drag and move around the grid on small screens.</li>
                     </ul>
                 </div>
@@ -180,12 +180,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const GRID_SIZE = 20;
     let grid = [];
     let wordsForCurrentGame = [];
-    let isMouseDown = false;
-    let startCoords = null;
-    let selectedCells = [];
+    let startCoords = null; // For click-click or drag-start
     
+    // State for pointer interactions
+    let pointerDown = false;
+    let isDragging = false;
+    let isPanning = false;
+    let pointerStartPos = { x: 0, y: 0 };
+    const DRAG_THRESHOLD = 10; // Pixels to move before it's a drag
+
     // --- HELPER FUNCTIONS ---
-    
     const cleanWord = (word) => {
         return word
             .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
@@ -322,48 +326,63 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // --- SELECTION & INTERACTION LOGIC ---
-    const getCoordsFromEvent = (e) => {
-        const target = e.target.closest('.grid-cell');
-        if (!target) return null;
-        return { r: parseInt(target.dataset.row), c: parseInt(target.dataset.col) };
+    const getCoordsFromPointerEvent = (e) => {
+        const target = document.elementFromPoint(e.clientX, e.clientY);
+        const cell = target?.closest('.grid-cell');
+        if (!cell) return null;
+        return { r: parseInt(cell.dataset.row), c: parseInt(cell.dataset.col) };
     };
 
-    const handleInteractionStart = (e) => {
-        e.preventDefault();
-        isMouseDown = true;
-        const coords = getCoordsFromEvent(e);
-        if (!coords) return;
+    const onPointerDown = (e) => {
+        if (isPanning) return;
+        pointerDown = true;
+        isDragging = false;
+        pointerStartPos = { x: e.clientX, y: e.clientY };
+        const currentCoords = getCoordsFromPointerEvent(e);
+        if (!currentCoords) return;
 
-        // If a selection is already started, this is the second click
-        if (startCoords) {
-            handleSelection(startCoords, coords);
+        if (startCoords) { // This is potentially the second click of a pair
+            handleSelection(startCoords, currentCoords);
         } else { // This is the first click
-            startCoords = coords;
-            clearAllHighlights();
-            const startCell = gridElement.querySelector(`[data-row='${coords.r}'][data-col='${coords.c}']`);
-            if (startCell) startCell.classList.add('selection-start');
+            startCoords = currentCoords;
+            highlightSelection(startCoords, startCoords);
         }
     };
 
-    const handleInteractionMove = (e) => {
-        if (!isMouseDown || !startCoords) return;
-        e.preventDefault();
-        const endCoords = getCoordsFromEvent(e);
-        if (endCoords) {
-            highlightSelection(startCoords, endCoords);
+    const onPointerMove = (e) => {
+        if (!pointerDown || isPanning) return;
+        const dx = Math.abs(e.clientX - pointerStartPos.x);
+        const dy = Math.abs(e.clientY - pointerStartPos.y);
+        if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
+            isDragging = true;
+        }
+        if (isDragging && startCoords) {
+            const currentCoords = getCoordsFromPointerEvent(e);
+            if (currentCoords) {
+                highlightSelection(startCoords, currentCoords);
+            }
         }
     };
 
-    const handleInteractionEnd = (e) => {
-        if (!isMouseDown || !startCoords) return;
-        isMouseDown = false;
-        const endCoords = getCoordsFromEvent(e);
-        if (endCoords && (endCoords.r !== startCoords.r || endCoords.c !== startCoords.c)) {
-             handleSelection(startCoords, endCoords);
+    const onPointerUp = (e) => {
+        if (isPanning) return;
+        const endCoords = getCoordsFromPointerEvent(e);
+        
+        if (isDragging) { // Handle drag selection
+            if (startCoords && endCoords) {
+                handleSelection(startCoords, endCoords);
+            }
+        } else if (pointerDown) { // Handle click/tap
+            // If startCoords is set and this wasn't a drag, it means it's a valid first click.
+            // We don't clear startCoords here; we wait for the second click.
+            // The logic in onPointerDown will handle the second click.
         }
-        // For click-click, the second click is handled in handleInteractionStart
+        
+        // Reset dragging state
+        pointerDown = false;
+        isDragging = false;
     };
-
+    
     const handleSelection = (start, end) => {
         checkSelection(start, end);
         startCoords = null; // Reset for the next selection
@@ -378,11 +397,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const highlightSelection = (start, end) => {
         clearAllHighlights();
+        const cells = getCellsBetween(start, end);
+        if (cells.length === 0) return;
+
+        cells.forEach(cell => cell?.classList.add('selecting'));
         const startCell = gridElement.querySelector(`[data-row='${start.r}'][data-col='${start.c}']`);
         if (startCell) startCell.classList.add('selection-start');
-
-        selectedCells = getCellsBetween(start, end);
-        selectedCells.forEach(cell => cell && cell.classList.add('selecting'));
     };
 
     const getCellsBetween = (start, end) => {
@@ -419,7 +439,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const wordsToFind = wordsForCurrentGame.filter(w => !w.found);
         const foundWord = wordsToFind.find(w => w.clean === selectedString || w.clean === reversedSelectedString);
 
-        if (foundWord) {
+        if (foundWord && !foundWord.found) {
             foundWord.found = true;
             drawWordOutline(start, end);
             renderWordList(wordsForCurrentGame);
@@ -430,36 +450,51 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     };
-
+    
     const drawWordOutline = (start, end) => {
         const gridRect = gridElement.getBoundingClientRect();
         const cellWidth = gridRect.width / GRID_SIZE;
         const cellHeight = gridRect.height / GRID_SIZE;
+        
+        const length = Math.max(Math.abs(start.r - end.r), Math.abs(start.c - end.c)) + 1;
+        const angle = Math.atan2(end.r - start.r, end.c - start.c) * 180 / Math.PI;
 
-        const x1 = (start.c + 0.5) * cellWidth;
-        const y1 = (start.r + 0.5) * cellHeight;
-        const x2 = (end.c + 0.5) * cellWidth;
-        const y2 = (end.r + 0.5) * cellHeight;
-
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('x1', x1);
-        line.setAttribute('y1', y1);
-        line.setAttribute('x2', x2);
-        line.setAttribute('y2', y2);
-        line.setAttribute('stroke', '#ef4444'); // red-500
-        line.setAttribute('stroke-width', cellWidth * 0.9); // Make line thick like a highlighter
-        line.setAttribute('stroke-linecap', 'round');
-        line.setAttribute('opacity', '0.6');
-        gridOverlay.appendChild(line);
+        const outline = document.createElement('div');
+        outline.style.position = 'absolute';
+        outline.style.width = `${length * cellWidth - (cellWidth * 0.2)}px`;
+        outline.style.height = `${cellHeight * 0.8}px`;
+        outline.style.left = `${start.c * cellWidth + (cellWidth * 0.1)}px`;
+        outline.style.top = `${start.r * cellHeight + (cellHeight * 0.1)}px`;
+        outline.style.border = '2px solid #ef4444'; // red-500
+        outline.style.borderRadius = `${cellHeight / 2}px`;
+        outline.style.transformOrigin = `${cellWidth * 0.4}px ${cellHeight * 0.4}px`;
+        outline.style.transform = `rotate(${angle}deg)`;
+        
+        // This is a bit of a hacky way to add to the DOM, but it works for overlaying
+        gridElement.style.position = 'relative';
+        gridElement.appendChild(outline);
     };
     
     // --- EVENT LISTENERS ---
-    gridElement.addEventListener('mousedown', handleInteractionStart);
-    gridElement.addEventListener('mousemove', handleInteractionMove);
-    document.addEventListener('mouseup', handleInteractionEnd);
-    gridElement.addEventListener('touchstart', (e) => { e.preventDefault(); handleInteractionStart(e.touches[0]); }, { passive: false });
-    gridElement.addEventListener('touchmove', (e) => { e.preventDefault(); handleInteractionMove(e.touches[0]); }, { passive: false });
-    document.addEventListener('touchend', (e) => { handleInteractionEnd(e.changedTouches[0]); });
+    // Use pointer events for unified mouse/touch
+    gridElement.addEventListener('pointerdown', onPointerDown);
+    gridElement.addEventListener('pointermove', onPointerMove);
+    gridElement.addEventListener('pointerup', onPointerUp);
+    gridElement.addEventListener('pointerleave', onPointerUp); // Treat leaving the grid as pointerup
+
+    // Specific listeners for two-finger panning
+    gridElement.addEventListener('touchstart', (e) => {
+        if (e.touches.length > 1) {
+            isPanning = true;
+            clearAllHighlights();
+            startCoords = null;
+        }
+    }, { passive: false });
+    gridElement.addEventListener('touchend', (e) => {
+        if (e.touches.length < 2) {
+            isPanning = false;
+        }
+    });
 
     newGameBtn.addEventListener('click', initializeGame);
     playAgainBtn.addEventListener('click', () => { closeModal(winModal); initializeGame(); });

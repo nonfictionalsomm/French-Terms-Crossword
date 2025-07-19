@@ -7,552 +7,639 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Lato:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
     <style>
         body {
-            font-family: 'Lato', sans-serif;
-            /* Prevent pull-to-refresh and other unwanted default touch actions on the body */
-            overscroll-behavior-y: contain;
+            font-family: 'Inter', sans-serif;
+            touch-action: manipulation;
         }
-        h1, h2, h3, .font-serif {
-            font-family: 'Cormorant Garamond', serif;
+        .lora {
+            font-family: 'Lora', serif;
         }
-        /* Custom styles for the game grid */
-        #grid-container {
-            position: relative; /* Needed for SVG overlay */
-            width: 100%;
-            max-width: 90vh; /* Limit width to prevent extreme stretching on wide screens */
-            margin: auto;
-            overflow: auto; /* Allow programmatic and two-finger scroll */
-            touch-action: none; /* Disable all default touch actions on the grid itself */
-        }
-        /* Enforce a square grid */
-        #grid {
+        #game-grid-wrapper {
+            position: relative;
+            overflow: auto;
             aspect-ratio: 1 / 1;
+            max-width: 100%;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            touch-action: pan-x pan-y; 
         }
-        #grid-overlay {
+        #game-grid, #outline-container {
+            width: 100%;
+            height: 100%;
             position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #game-grid {
+            display: grid;
+            user-select: none;
+            padding: 10px;
+            gap: 4px;
+            box-sizing: border-box;
+        }
+        #outline-container {
+            pointer-events: none;
+        }
+        .word-outline {
+            position: absolute;
+            border: 3px solid #EF4444;
+            border-radius: 9999px;
+            box-sizing: border-box;
+            transform-origin: center;
+        }
+        .grid-cell {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            aspect-ratio: 1 / 1;
+            font-size: 16px;
+            text-transform: uppercase;
+            font-weight: 600;
+            color: #374151;
+            cursor: pointer;
+            transition: background-color 0.1s ease-in-out;
+            border-radius: 2px;
+            position: relative;
+            z-index: 1;
+        }
+        .selecting {
+            background-color: #FBBF24;
+            color: #1F2937;
+        }
+        .first-click {
+            background-color: #FDE68A;
+            color: #1F2937;
+        }
+        .word-list-item.found {
+            text-decoration: line-through;
+            color: #6B7280;
+        }
+        .modal-backdrop {
+            position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            pointer-events: none; /* Allows clicks to pass through to the grid */
-        }
-        .grid-cell {
-            font-size: clamp(0.75rem, 2.5vw, 1.25rem); /* Responsive font size */
-            user-select: none;
-            -webkit-user-select: none;
-            -moz-user-select: none;
-            -ms-user-select: none;
-            transition: all 0.2s ease-in-out;
-            border-radius: 0.375rem; /* rounded-md */
+            background-color: rgba(0, 0, 0, 0.6);
             display: flex;
-            align-items: center;
             justify-content: center;
+            align-items: center;
+            z-index: 50;
+            padding: 1rem;
         }
-        .grid-cell.selecting {
-            background-color: #fde047; /* yellow-300 */
-            transform: scale(1.1);
-        }
-        /* New style for the first letter of a selection */
-        .grid-cell.selection-start {
-             background-color: #a5b4fc; /* indigo-300 */
-        }
-        .word-list-item.found {
-            text-decoration: line-through;
-            color: #9ca3af; /* gray-400 */
-        }
-        /* Allow vertical scrolling on the word list */
-        #word-list-container {
-            touch-action: pan-y;
-        }
-        #word-list-container::-webkit-scrollbar {
-            width: 8px;
-        }
-        #word-list-container::-webkit-scrollbar-track {
-            background: #f1f5f9; /* slate-100 */
-        }
-        #word-list-container::-webkit-scrollbar-thumb {
-            background-color: #94a3b8; /* slate-400 */
-            border-radius: 20px;
-            border: 3px solid #f1f5f9; /* slate-100 */
+        .modal-content-box {
+            overflow-y: auto;
+            max-height: 90vh;
         }
     </style>
 </head>
-<body class="bg-slate-100 text-slate-800 flex flex-col items-center justify-center min-h-screen p-2 md:p-4">
+<body class="bg-gray-50 text-gray-800 antialiased">
 
-    <div class="w-full max-w-3xl mx-auto bg-white rounded-2xl shadow-2xl p-4 md:p-6 lg:p-8 flex flex-col gap-8">
-        <!-- Game Grid Section -->
-        <div class="w-full flex flex-col items-center justify-center">
-            <h1 class="text-3xl md:text-4xl lg:text-5xl font-bold text-slate-900 mb-4 font-serif">Le Mot Caché</h1>
-            <div id="grid-container" class="border-4 border-slate-200 rounded-xl p-2 bg-slate-50 shadow-inner">
-                <div id="grid" class="grid cursor-pointer gap-1 md:gap-2">
-                    <!-- Grid cells will be generated by JavaScript -->
-                </div>
-                <svg id="grid-overlay"></svg>
-            </div>
-        </div>
+    <div class="max-w-7xl mx-auto p-2 sm:p-4 lg:p-8">
+        <header class="text-center mb-4 sm:mb-8">
+            <h1 class="text-3xl sm:text-5xl font-bold lora text-gray-900">Le Mot Caché</h1>
+            <p class="mt-2 text-base sm:text-lg text-gray-600">A French Wine Word Search</p>
+        </header>
 
-        <!-- Word List and Controls Section -->
-        <div class="w-full flex flex-col bg-slate-50 p-4 rounded-xl border-2 border-slate-200">
-            <h2 class="text-2xl font-bold mb-4 text-center font-serif">Find The Words</h2>
-            <div id="word-list-container" class="w-full max-h-48 overflow-y-auto pr-2">
-                <ul id="word-list" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-6 gap-y-1 text-lg">
-                    <!-- Word list will be generated by JavaScript -->
-                </ul>
-            </div>
-            <div class="mt-4 flex flex-col sm:flex-row gap-4">
-                <button id="new-game-btn" class="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 transition-colors shadow-md">New Game</button>
-                <button id="how-to-play-btn" class="w-full bg-slate-200 text-slate-700 font-bold py-2 px-4 rounded-lg hover:bg-slate-300 transition-colors">How to Play</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Definition Modal -->
-    <div id="definition-modal" class="fixed inset-0 bg-black bg-opacity-60 items-center justify-center hidden z-50">
-        <div class="bg-white rounded-2xl shadow-xl p-6 md:p-8 m-4 max-w-lg w-full transform transition-all scale-95 opacity-0">
-            <h3 id="modal-word" class="text-3xl font-bold mb-4 font-serif text-indigo-700">Word</h3>
-            <p id="modal-definition" class="text-lg text-slate-700 mb-6">Definition goes here.</p>
-            <button id="close-modal-btn" class="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 transition-colors shadow-md">Close</button>
-        </div>
-    </div>
-
-    <!-- Win Modal -->
-    <div id="win-modal" class="fixed inset-0 bg-black bg-opacity-60 items-center justify-center hidden z-50">
-        <div class="bg-white rounded-2xl shadow-xl p-8 text-center m-4 max-w-md w-full transform transition-all scale-95 opacity-0">
-            <h2 class="text-5xl font-bold mb-4 font-serif text-amber-500">Félicitations!</h2>
-            <p class="text-xl text-slate-700 mb-6">You have found all the words!</p>
-            <button id="play-again-btn" class="w-full bg-amber-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-amber-600 transition-colors shadow-md">Play Again</button>
-        </div>
-    </div>
-
-    <!-- How to Play Modal -->
-    <div id="how-to-play-modal" class="fixed inset-0 bg-black bg-opacity-60 items-center justify-center flex z-50">
-        <div class="bg-white rounded-2xl shadow-xl p-8 m-4 max-w-2xl w-full transform transition-all scale-95 opacity-0">
-            <h2 class="text-3xl md:text-4xl font-bold mb-4 font-serif text-slate-900">How to Play</h2>
-            <div class="text-slate-700 space-y-4">
-                <p><strong class="text-indigo-600">Goal:</strong> Find all the French wine terms hidden in the grid. Words can be horizontal, vertical, or diagonal, in any direction.</p>
-                <div>
-                    <h4 class="font-bold text-lg">Selection Methods:</h4>
-                    <ul class="list-disc list-inside ml-4 space-y-1">
-                        <li><strong>Click & Drag:</strong> Click the first letter, drag to the last letter, and release.</li>
-                        <li><strong>Click & Click:</strong> Click the first letter, then click the last letter.</li>
-                    </ul>
-                </div>
-                <div>
-                    <h4 class="font-bold text-lg">Touch Controls:</h4>
-                     <ul class="list-disc list-inside ml-4 space-y-1">
-                        <li><strong>Select:</strong> Use the drag or tap-tap method with one finger.</li>
-                        <li><strong>Pan Grid:</strong> Use <strong class="text-indigo-600">two fingers</strong> to drag and move around the grid on small screens.</li>
-                    </ul>
+        <main class="grid grid-cols-1 lg:grid-cols-4 gap-4 sm:gap-8">
+            <div id="game-container" class="lg:col-span-3 bg-white p-2 sm:p-4 rounded-xl shadow-lg border border-gray-200">
+                <div id="game-grid-wrapper">
+                    <div id="game-grid"></div>
+                    <div id="outline-container"></div>
                 </div>
             </div>
-            <button id="start-game-btn" class="mt-6 w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 transition-colors shadow-md">Start Game</button>
+
+            <aside class="bg-white p-4 sm:p-6 rounded-xl shadow-lg border border-gray-200">
+                <h2 class="text-xl sm:text-2xl font-bold lora mb-4">Words to Find</h2>
+                <div id="word-list-container" class="h-80 sm:h-96 overflow-y-auto pr-2">
+                   <ul id="word-list" class="space-y-2 text-sm sm:text-base text-gray-700">
+                   </ul>
+                </div>
+                <div class="mt-4 sm:mt-6">
+                    <button id="reset-button" class="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors">
+                        New Game
+                    </button>
+                </div>
+            </aside>
+        </main>
+    </div>
+
+    <div id="rules-modal" class="modal-backdrop">
+        <div class="bg-white rounded-2xl shadow-2xl w-11/12 max-w-md m-4 transform transition-all modal-content-box" id="rules-content">
+            <div class="p-8 text-center">
+                <h3 class="text-3xl font-bold lora text-indigo-600 mb-4">How to Play</h3>
+                <div class="text-gray-600 text-lg text-left space-y-4">
+                    <p>Find all the French wine terms hidden in the grid. Words can be found horizontally, vertically, or diagonally, in any direction.</p>
+                    
+                    <div class="mt-4 p-3 bg-indigo-50 rounded-lg text-center text-base">
+                        <p><strong>Pro Tip for Mobile:</strong> Rotate your phone horizontally for a better view! Use two fingers to pan around the grid.</p>
+                    </div>
+
+                    <div>
+                        <h4 class="font-bold">To select a word:</h4>
+                        <ul class="list-disc list-inside mt-2 space-y-1">
+                            <li><strong>Click & Drag:</strong> Click the first letter and drag your cursor to the last letter.</li>
+                            <li><strong>Click, Click:</strong> Click the first letter, then click the last letter.</li>
+                        </ul>
+                    </div>
+                </div>
+                <button id="start-game-btn" class="mt-8 w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors">
+                    Start Game
+                </button>
+            </div>
         </div>
     </div>
 
-
-<script>
-document.addEventListener('DOMContentLoaded', () => {
-
-    // --- DOM ELEMENTS ---
-    const gridElement = document.getElementById('grid');
-    const wordListElement = document.getElementById('word-list');
-    const gridContainer = document.getElementById('grid-container');
-    const gridOverlay = document.getElementById('grid-overlay');
-
-    // Modals
-    const definitionModal = document.getElementById('definition-modal');
-    const winModal = document.getElementById('win-modal');
-    const howToPlayModal = document.getElementById('how-to-play-modal');
+    <div id="definition-modal" class="modal-backdrop hidden">
+        <div class="bg-white rounded-2xl shadow-2xl w-11/12 max-w-md m-4 transform transition-all modal-content-box" id="modal-content">
+            <div class="p-8">
+                <h3 id="modal-word" class="text-3xl font-bold lora text-indigo-600 mb-6 text-center"></h3>
+                <div id="modal-info" class="text-gray-700 text-left space-y-4">
+                </div>
+                <button id="modal-continue-btn" class="mt-8 w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors">
+                    Continue
+                </button>
+            </div>
+        </div>
+    </div>
     
-    // Modal Content
-    const modalWord = document.getElementById('modal-word');
-    const modalDefinition = document.getElementById('modal-definition');
+    <div id="win-modal" class="modal-backdrop hidden">
+        <div class="bg-white rounded-2xl shadow-2xl w-11/12 max-w-md m-4 transform transition-all p-8 text-center">
+             <h3 class="text-4xl font-bold lora text-emerald-600 mb-4">Félicitations!</h3>
+             <p class="text-gray-600 text-lg mb-8">You found all the words!</p>
+             <button id="win-new-game-btn" class="w-full bg-emerald-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-emerald-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition-colors">
+                 Play Again
+             </button>
+        </div>
+    </div>
 
-    // Buttons
-    const newGameBtn = document.getElementById('new-game-btn');
-    const playAgainBtn = document.getElementById('play-again-btn');
-    const closeModalBtn = document.getElementById('close-modal-btn');
-    const howToPlayBtn = document.getElementById('how-to-play-btn');
-    const startGameBtn = document.getElementById('start-game-btn');
 
-    // --- GAME DATA ---
-    const rawWordData = "Assemblage: The art of blending different lots of wine to create the final product.;Bâtonnage: The practice of stirring the lees (spent yeast) in a barrel to add texture and complexity.;Bousinage: The final, crucial step of toasting the inside of a new oak barrel to create flavor compounds.;Bouillie Bordelaise: The 'Bordeaux Mixture,' a copper sulfate and lime spray used as a fungicide.;Chai: An above-ground cellar or building used for aging wine in barrels.;Chaptalisation: The process of adding sugar to must (unfermented grape juice) to increase the final alcohol level.;Clavelin: The unique, squat 62 cl bottle used exclusively for Vin Jaune.;Climat: A specific, named vineyard plot with its own unique terroir, often a Premier or Grand Cru.;Clos: A vineyard plot traditionally enclosed by a stone wall.;Coulure: A viticultural hazard where grape flowers fail to fertilize, leading to a poor fruit set.;Coteaux: The slope or hillside; vineyards on the coteaux are often prized for sun and drainage.;Cuvée: A specific blend or batch of wine; can also refer to the best juice from the first pressing.;Débourbage: Settling the juice of white wine after pressing to clarify it before fermentation.;Délestage: A 'rack and return' technique for aggressively extracting color and tannin during fermentation.;Élevage: The 'raising' or maturation of wine during the period between fermentation and bottling.;Eraflage: The process of destemming grapes before they are crushed and fermented.;Galets Roulés: Large, rounded 'pudding stones' in Châteauneuf-du-Pape that radiate heat to the vines.;Goût de Terroir: The 'taste of the place', the desirable earthy, mineral notes that reflect a wine's origin.;Grès: Sandstone-based soils, contributing to fine, aromatic wines.;Jable: The groove carved into the end of barrel staves where the barrel head is fitted.;Lieu-dit: A named place or vineyard that is not an officially classified cru but is recognized for its quality.;Madérisé: A wine fault caused by oxidation from heat, giving it cooked and nutty aromas.;Marc: The solid remains (skins, seeds) after pressing, can be distilled into an eau-de-vie.;Marne: A calcium-rich clay and limestone soil mixture, prized for water retention and minerality.;Merrain: The raw, split oak staves that are seasoned for years before being made into a barrel.;Millerandage: A hazard causing grape bunches to have berries of different sizes and maturities.;Monopole: A vineyard owned and controlled by a single winery.;Mutage: The process of stopping fermentation by adding alcohol, used for fortified sweet wines.;Nerveux: A desirable quality of 'nervy' high acidity that makes a wine feel vibrant and energetic.;Ouillage: The essential practice of topping up barrels to replace wine lost to evaporation.;Passerillage: The process of leaving grapes on the vine to dry and concentrate their sugars.;Pigeage: The traditional technique of punching down the cap of grape skins during red wine fermentation.;Pourriture Noble: 'Noble Rot' (Botrytis cinerea), a fungus that concentrates sugars to create exquisite sweet wines.;Rancio: A specific, deliberately oxidized and nutty flavor profile in certain fortified wines.;Saignée: The 'bleeding' method of making rosé by drawing off juice from a red wine fermentation.;Schistes: Schist. A hard, metamorphic rock soil that retains heat and promotes deep root growth.;Silex: A flint-based soil in Sancerre and Pouilly-Fumé that imparts a 'gunflint' aroma.;Sous Voile - 'Under a veil', aging wine (Vin Jaune) under a film of yeast, creating unique nutty flavors.;Taille: The critical winter pruning of grapevines that determines the next season's crop.;Tuffeau: The porous, chalky limestone soil of Vouvray and Saumur, excellent for drainage.";
-    let words = [];
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const gridWrapper = document.getElementById('game-grid-wrapper');
+        const gridElement = document.getElementById('game-grid');
+        const outlineContainer = document.getElementById('outline-container');
+        const wordListElement = document.getElementById('word-list');
+        const resetButton = document.getElementById('reset-button');
+        const definitionModal = document.getElementById('definition-modal');
+        const modalWord = document.getElementById('modal-word');
+        const modalInfo = document.getElementById('modal-info');
+        const modalContinueBtn = document.getElementById('modal-continue-btn');
+        const winModal = document.getElementById('win-modal');
+        const winNewGameBtn = document.getElementById('win-new-game-btn');
+        const rulesModal = document.getElementById('rules-modal');
+        const startGameBtn = document.getElementById('start-game-btn');
 
-    // --- GAME STATE ---
-    const GRID_SIZE = 20;
-    let grid = [];
-    let wordsForCurrentGame = [];
-    let startCoords = null; // For click-click or drag-start
-    let foundWordShapes = []; // Stores coords for redrawing outlines on resize
-    
-    // State for pointer interactions
-    let isPointerDown = false;
-    let isDragging = false;
-    let isPanning = false;
-    let pointerStartPos = { x: 0, y: 0 };
-    let initialPanMidpoint = { x: 0, y: 0 };
-    let initialPanScroll = { left: 0, top: 0 };
-    const DRAG_THRESHOLD = 10; // Pixels to move before it's a drag
+        // --- MODIFIED: NEW DATABASE AND SELECTION LOGIC ---
+        const rawWordData = "Assemblage: The art of blending different lots of wine to create the final product.;Bâtonnage: The practice of stirring the lees (spent yeast) in a barrel to add texture and complexity.;Bousinage: The final, crucial step of toasting the inside of a new oak barrel to create flavor compounds.;Bouillie Bordelaise: The 'Bordeaux Mixture,' a copper sulfate and lime spray used as a fungicide.;Chai: An above-ground cellar or building used for aging wine in barrels.;Chaptalisation: The process of adding sugar to must (unfermented grape juice) to increase the final alcohol level.;Clavelin: The unique, squat 62 cl bottle used exclusively for Vin Jaune.;Climat: A specific, named vineyard plot with its own unique terroir, often a Premier or Grand Cru.;Clos: A vineyard plot traditionally enclosed by a stone wall.;Coulure: A viticultural hazard where grape flowers fail to fertilize, leading to a poor fruit set.;Coteaux: The slope or hillside; vineyards on the coteaux are often prized for sun and drainage.;Cuvée: A specific blend or batch of wine; can also refer to the best juice from the first pressing.;Débourbage: Settling the juice of white wine after pressing to clarify it before fermentation.;Délestage: A 'rack and return' technique for aggressively extracting color and tannin during fermentation.;Élevage: The 'raising' or maturation of wine during the period between fermentation and bottling.;Eraflage: The process of destemming grapes before they are crushed and fermented.;Galets Roulés: Large, rounded 'pudding stones' in Châteauneuf-du-Pape that radiate heat to the vines.;Goût de Terroir: The 'taste of the place', the desirable earthy, mineral notes that reflect a wine's origin.;Grès: Sandstone-based soils, contributing to fine, aromatic wines.;Jable: The groove carved into the end of barrel staves where the barrel head is fitted.;Lieu-dit: A named place or vineyard that is not an officially classified cru but is recognized for its quality.;Madérisé: A wine fault caused by oxidation from heat, giving it cooked and nutty aromas.;Marc: The solid remains (skins, seeds) after pressing, can be distilled into an eau-de-vie.;Marne: A calcium-rich clay and limestone soil mixture, prized for water retention and minerality.;Merrain: The raw, split oak staves that are seasoned for years before being made into a barrel.;Millerandage: A hazard causing grape bunches to have berries of different sizes and maturities.;Monopole: A vineyard owned and controlled by a single winery.;Mutage: The process of stopping fermentation by adding alcohol, used for fortified sweet wines.;Nerveux: A desirable quality of 'nervy' high acidity that makes a wine feel vibrant and energetic.;Ouillage: The essential practice of topping up barrels to replace wine lost to evaporation.;Passerillage: The process of leaving grapes on the vine to dry and concentrate their sugars.;Pigeage: The traditional technique of punching down the cap of grape skins during red wine fermentation.;Pourriture Noble: 'Noble Rot' (Botrytis cinerea), a fungus that concentrates sugars to create exquisite sweet wines.;Rancio: A specific, deliberately oxidized and nutty flavor profile in certain fortified wines.;Saignée: The 'bleeding' method of making rosé by drawing off juice from a red wine fermentation.;Schistes: Schist. A hard, metamorphic rock soil that retains heat and promotes deep root growth.;Silex: A flint-based soil in Sancerre and Pouilly-Fumé that imparts a 'gunflint' aroma.;Sous Voile: 'Under a veil', aging wine (Vin Jaune) under a film of yeast, creating unique nutty flavors.;Taille: The critical winter pruning of grapevines that determines the next season's crop.;Tuffeau: The porous, chalky limestone soil of Vouvray and Saumur, excellent for drainage.";
+        let allWords = [];
+        let wordsForCurrentGame = [];
 
-    // --- HELPER FUNCTIONS ---
-    const cleanWord = (word) => {
-        return word
-            .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-            .replace(/[\s-]/g, '')
-            .toUpperCase();
-    };
+        const GRID_SIZE = 25;
+        const WORDS_PER_GAME = 15;
+        // --- END MODIFICATION ---
 
-    const parseWords = () => {
-        words = rawWordData.split(';')
-            .filter(item => item.trim() !== '')
-            .map(item => {
-                const parts = item.split(/:(.*)/s);
-                const word = parts[0];
-                const definition = parts[1];
-                if (!word || typeof definition === 'undefined') return null;
-                return {
-                    original: word.trim(),
-                    clean: cleanWord(word.trim()),
-                    definition: definition.trim(),
-                    found: false
-                };
-            }).filter(Boolean);
-    };
-
-    // --- MODAL HANDLING ---
-    const openModal = (modal) => {
-        modal.style.display = 'flex';
-        setTimeout(() => {
-            modal.querySelector('div').classList.remove('scale-95', 'opacity-0');
-            modal.querySelector('div').classList.add('scale-100', 'opacity-100');
-        }, 10);
-    };
-
-    const closeModal = (modal) => {
-        modal.querySelector('div').classList.add('scale-95', 'opacity-0');
-        modal.querySelector('div').classList.remove('scale-100', 'opacity-100');
-        setTimeout(() => modal.style.display = 'none', 200);
-    };
-
-    const showDefinitionModal = (wordObj) => {
-        modalWord.textContent = wordObj.original;
-        modalDefinition.textContent = wordObj.definition;
-        openModal(definitionModal);
-    };
-
-    // --- GRID GENERATION ---
-    const initializeGame = () => {
-        grid = Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(null));
-        words.forEach(w => w.found = false);
-        gridOverlay.innerHTML = ''; 
-        foundWordShapes = [];
+        const DRAG_THRESHOLD = 10;
+        let grid = [];
+        let selectionStart = null;
+        let selectionEnd = null;
+        let foundWords = new Set();
+        let firstClickCell = null;
         
-        const shuffledWords = [...words].sort(() => 0.5 - Math.random());
-        wordsForCurrentGame = shuffledWords.slice(0, 15);
+        let activeState = {
+            isDown: false,
+            isDragging: false,
+            isPanning: false,
+            panStart: { x: 0, y: 0 },
+            scrollStart: { left: 0, top: 0 },
+            touchStartCoords: { x: 0, y: 0 }
+        };
 
-        placeWordsInGrid(wordsForCurrentGame);
-        fillEmptyCells();
-        renderGrid();
-        renderWordList(wordsForCurrentGame);
-    };
-
-    const placeWordsInGrid = (wordsToPlace) => {
-        const directions = [
-            { r: 0, c: 1 }, { r: 1, c: 0 }, { r: 1, c: 1 }, { r: 1, c: -1 },
-            { r: 0, c: -1 }, { r: -1, c: 0 }, { r: -1, c: -1}, { r: -1, c: 1 }
-        ];
-        for (const wordObj of wordsToPlace) {
-            const word = wordObj.clean;
-            let placed = false;
-            let attempts = 0;
-            while (!placed && attempts < 100) {
-                const dir = directions[Math.floor(Math.random() * directions.length)];
-                const startRow = Math.floor(Math.random() * GRID_SIZE);
-                const startCol = Math.floor(Math.random() * GRID_SIZE);
-                if (canPlaceWord(word, startRow, startCol, dir)) {
-                    for (let i = 0; i < word.length; i++) {
-                        const r = startRow + i * dir.r;
-                        const c = startCol + i * dir.c;
-                        grid[r][c] = { letter: word[i], wordRef: wordObj.clean };
-                    }
-                    placed = true;
-                }
-                attempts++;
-            }
+        // --- NEW: Function to parse the raw data string ---
+        function parseAllWords() {
+            allWords = rawWordData.split(';')
+                .filter(item => item.trim() !== '')
+                .map(item => {
+                    const parts = item.split(/:(.*)/s);
+                    const term = parts[0];
+                    const definition = parts[1];
+                    if (!term || typeof definition === 'undefined') return null;
+                    return {
+                        term: term.trim(),
+                        // The 'info' object keeps it compatible with showDefinitionModal
+                        info: { definition: definition.trim() }
+                    };
+                }).filter(Boolean);
         }
-    };
-
-    const canPlaceWord = (word, startRow, startCol, dir) => {
-        for (let i = 0; i < word.length; i++) {
-            const r = startRow + i * dir.r;
-            const c = startCol + i * dir.c;
-            if (r < 0 || r >= GRID_SIZE || c < 0 || c >= GRID_SIZE) return false;
-            const cell = grid[r][c];
-            if (cell && cell.letter !== word[i]) return false;
-        }
-        return true;
-    };
-
-    const fillEmptyCells = () => {
-        const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-        for (let r = 0; r < GRID_SIZE; r++) {
-            for (let c = 0; c < GRID_SIZE; c++) {
-                if (!grid[r][c]) {
-                    grid[r][c] = { letter: alphabet[Math.floor(Math.random() * alphabet.length)], wordRef: null };
-                }
-            }
-        }
-    };
-
-    // --- RENDERING ---
-    const renderGrid = () => {
-        gridElement.innerHTML = '';
-        gridElement.style.gridTemplateColumns = `repeat(${GRID_SIZE}, minmax(0, 1fr))`;
-        for (let r = 0; r < GRID_SIZE; r++) {
-            for (let c = 0; c < GRID_SIZE; c++) {
-                const cell = document.createElement('div');
-                cell.className = 'grid-cell font-bold text-slate-700';
-                cell.textContent = grid[r][c].letter;
-                cell.dataset.row = r;
-                cell.dataset.col = c;
-                gridElement.appendChild(cell);
-            }
-        }
-    };
-
-    const renderWordList = (wordsToRender) => {
-        wordListElement.innerHTML = '';
-        wordsToRender.sort((a,b) => a.original.localeCompare(b.original)).forEach(wordObj => {
-            const li = document.createElement('li');
-            li.textContent = wordObj.original;
-            li.className = 'word-list-item font-serif';
-            if (wordObj.found) li.classList.add('found');
-            wordListElement.appendChild(li);
-        });
-    };
-
-    // --- SELECTION & INTERACTION LOGIC ---
-    const getCoordsFromPointer = (e) => {
-        const target = document.elementFromPoint(e.clientX, e.clientY);
-        const cell = target?.closest('.grid-cell');
-        if (!cell) return null;
-        return { r: parseInt(cell.dataset.row), c: parseInt(cell.dataset.col) };
-    };
-
-    const handlePointerDown = (e) => {
-        isPointerDown = true;
-        isDragging = false;
-        pointerStartPos = { x: e.clientX, y: e.clientY };
-        const currentCoords = getCoordsFromPointer(e);
-        if (!currentCoords) return;
-
-        if (startCoords) { 
-            handleSelection(startCoords, currentCoords);
-        } else {
-            startCoords = currentCoords;
-            highlightSelection(startCoords, startCoords);
-        }
-    };
-
-    const handlePointerMove = (e) => {
-        if (!isPointerDown) return;
-        const dx = Math.abs(e.clientX - pointerStartPos.x);
-        const dy = Math.abs(e.clientY - pointerStartPos.y);
-        if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
-            isDragging = true;
-        }
-        if (isDragging && startCoords) {
-            const currentCoords = getCoordsFromPointer(e);
-            if (currentCoords) {
-                highlightSelection(startCoords, currentCoords);
-            }
-        }
-    };
-
-    const handlePointerUp = (e) => {
-        const endCoords = getCoordsFromPointer(e);
-        if (isDragging) {
-            if (startCoords && endCoords) {
-                handleSelection(startCoords, endCoords);
-            }
-        }
-        isPointerDown = false;
-        isDragging = false;
-    };
-    
-    const handleSelection = (start, end) => {
-        checkSelection(start, end);
-        startCoords = null;
-        clearAllHighlights();
-    };
-
-    const clearAllHighlights = () => {
-        document.querySelectorAll('.grid-cell.selecting, .grid-cell.selection-start').forEach(c => {
-            c.classList.remove('selecting', 'selection-start');
-        });
-    };
-
-    const highlightSelection = (start, end) => {
-        clearAllHighlights();
-        const cells = getCellsBetween(start, end);
-        if (cells.length === 0) return;
-
-        cells.forEach(cell => cell?.classList.add('selecting'));
-        const startCell = gridElement.querySelector(`[data-row='${start.r}'][data-col='${start.c}']`);
-        if (startCell) startCell.classList.add('selection-start');
-    };
-
-    const getCellsBetween = (start, end) => {
-        const cells = [];
-        const { r: r1, c: c1 } = start;
-        const { r: r2, c: c2 } = end;
-        const dr = Math.sign(r2 - r1);
-        const dc = Math.sign(c2 - c1);
-
-        if (dr !== 0 && dc !== 0 && Math.abs(r2 - r1) !== Math.abs(c2 - c1)) return [];
-
-        let r = r1, c = c1;
-        while (true) {
-            const cellEl = gridElement.querySelector(`[data-row='${r}'][data-col='${c}']`);
-            if (cellEl) cells.push(cellEl);
-            if (r === r2 && c === c2) break;
-            r += dr; c += dc;
-        }
-        return cells;
-    };
-
-    const checkSelection = (start, end) => {
-        let selectedString = '';
-        const cells = getCellsBetween(start, end);
-        if (cells.length === 0) return;
-
-        cells.forEach(cell => {
-            const r = parseInt(cell.dataset.row);
-            const c = parseInt(cell.dataset.col);
-            selectedString += grid[r][c].letter;
-        });
-
-        const reversedSelectedString = selectedString.split('').reverse().join('');
-        const wordsToFind = wordsForCurrentGame.filter(w => !w.found);
         
-        let isReversed = false;
-        const foundWord = wordsToFind.find(w => {
-            if (w.clean === selectedString) return true;
-            if (w.clean === reversedSelectedString) {
-                isReversed = true;
-                return true;
-            }
-            return false;
-        });
+        // --- NEW: Function to select 15 random words for the game ---
+        function selectWordsForGame() {
+            const shuffled = [...allWords].sort(() => 0.5 - Math.random());
+            // Deep copy to prevent modification of the original `allWords` array
+            wordsForCurrentGame = JSON.parse(JSON.stringify(shuffled.slice(0, WORDS_PER_GAME)));
+        }
 
-        if (foundWord && !foundWord.found) {
-            foundWord.found = true;
-            const shapeData = isReversed ? { start: end, end: start } : { start, end };
-            foundWordShapes.push(shapeData);
-            drawWordOutline(shapeData);
-            renderWordList(wordsForCurrentGame);
-            showDefinitionModal(foundWord);
+        function sanitizeWord(word) {
+            const normalized = word.term.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            return normalized.toUpperCase().replace(/[^A-Z]/g, '');
+        }
+
+        function initializeGame() {
+            foundWords.clear();
+            selectWordsForGame(); // Select new words for the game
+            wordsForCurrentGame.forEach(w => w.sanitized = sanitizeWord(w));
             
-            if (wordsForCurrentGame.every(w => w.found)) {
-                setTimeout(() => openModal(winModal), 500);
+            outlineContainer.innerHTML = '';
+            clearFirstClickHighlight();
+            firstClickCell = null;
+            
+            let allWordsPlaced = false;
+            let placementAttempts = 0;
+            while(!allWordsPlaced && placementAttempts < 20) {
+                grid = createEmptyGrid();
+                placeWordsInGrid();
+                // MODIFIED: Check against wordsForCurrentGame
+                if (wordsForCurrentGame.every(w => w.placed)) {
+                    allWordsPlaced = true;
+                }
+                placementAttempts++;
+            }
+            if(!allWordsPlaced) {
+                console.error("Failed to place all words after multiple attempts.");
+                alert("Error: Could not create the word search. Please try reloading.");
+            }
+
+            fillEmptyCells();
+            renderGrid();
+            renderWordList();
+            definitionModal.classList.add('hidden');
+            winModal.classList.add('hidden');
+        }
+
+        function createEmptyGrid(fillValue = null) {
+            return Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(fillValue));
+        }
+
+        function placeWordsInGrid() {
+            const directions = [ { x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }, { x: 1, y: 1 }, { x: -1, y: -1 }, { x: 1, y: -1 }, { x: -1, y: 1 } ];
+            // MODIFIED: Use wordsForCurrentGame
+            const sortedWords = [...wordsForCurrentGame].sort((a, b) => b.sanitized.length - a.sanitized.length);
+
+            for (const wordObj of sortedWords) {
+                const word = wordObj.sanitized;
+                wordObj.placed = false;
+                
+                const startCells = [];
+                for(let r=0; r<GRID_SIZE; r++) for(let c=0; c<GRID_SIZE; c++) startCells.push({r, c});
+                shuffle(startCells);
+
+                for (const startCell of startCells) {
+                    if (wordObj.placed) break;
+                    
+                    shuffle(directions);
+                    for (const dir of directions) {
+                        if (canPlaceWord(word, startCell.r, startCell.c, dir)) {
+                            for (let i = 0; i < word.length; i++) grid[startCell.r + i * dir.y][startCell.c + i * dir.x] = word[i];
+                            wordObj.placed = true;
+                            wordObj.start = { row: startCell.r, col: startCell.c };
+                            wordObj.end = { row: startCell.r + (word.length - 1) * dir.y, col: startCell.c + (word.length - 1) * dir.x };
+                            break;
+                        }
+                    }
+                }
             }
         }
-    };
-    
-    const drawWordOutline = ({ start, end }) => {
-        const gridRect = gridElement.getBoundingClientRect();
-        if (gridRect.width === 0) return;
-
-        const cellWidth = gridRect.width / GRID_SIZE;
-        const cellHeight = gridRect.height / GRID_SIZE;
-
-        const startX = (start.c + 0.5) * cellWidth;
-        const startY = (start.r + 0.5) * cellHeight;
-        const endX = (end.c + 0.5) * cellWidth;
-        const endY = (end.r + 0.5) * cellHeight;
-
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('x1', startX);
-        line.setAttribute('y1', startY);
-        line.setAttribute('x2', endX);
-        line.setAttribute('y2', endY);
-        line.setAttribute('stroke', '#ef4444');
-        line.setAttribute('stroke-width', cellHeight * 0.8);
-        line.setAttribute('stroke-linecap', 'round');
         
-        gridOverlay.appendChild(line);
-    };
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+        }
 
-    const redrawAllOutlines = () => {
-        gridOverlay.innerHTML = '';
-        foundWordShapes.forEach(shape => drawWordOutline(shape));
-    }
+        function canPlaceWord(word, startRow, startCol, dir) {
+            for (let i = 0; i < word.length; i++) {
+                const row = startRow + i * dir.y;
+                const col = startCol + i * dir.x;
+                if (row < 0 || row >= GRID_SIZE || col < 0 || col >= GRID_SIZE) return false;
+                const cell = grid[row][col];
+                if (cell !== null && cell !== word[i]) return false;
+            }
+            return true;
+        }
+
+        function fillEmptyCells() {
+            const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+            for (let r = 0; r < GRID_SIZE; r++) for (let c = 0; c < GRID_SIZE; c++) if (grid[r][c] === null) grid[r][c] = alphabet[Math.floor(Math.random() * alphabet.length)];
+        }
+
+        function renderGrid() {
+            gridElement.innerHTML = '';
+            gridElement.style.gridTemplateColumns = `repeat(${GRID_SIZE}, 1fr)`;
+            gridElement.style.gridTemplateRows = `repeat(${GRID_SIZE}, 1fr)`;
+
+            for (let r = 0; r < GRID_SIZE; r++) {
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('grid-cell');
+                    cell.dataset.row = r;
+                    cell.dataset.col = c;
+                    cell.textContent = grid[r][c];
+                    gridElement.appendChild(cell);
+                }
+            }
+        }
+
+        function renderWordList() {
+            wordListElement.innerHTML = '';
+            // MODIFIED: Use wordsForCurrentGame
+            wordsForCurrentGame.sort((a,b) => a.term.localeCompare(b.term)).forEach(word => {
+                const li = document.createElement('li');
+                li.textContent = word.term;
+                li.classList.add('word-list-item', 'transition-colors', 'duration-300');
+                if (foundWords.has(word.sanitized)) li.classList.add('found');
+                wordListElement.appendChild(li);
+            });
+        }
+        
+        function getCellFromEvent(evt) {
+            const targetElement = document.elementFromPoint(evt.clientX, evt.clientY);
+            if (!targetElement) return null;
+            const cellElement = targetElement.closest('.grid-cell');
+            if (!cellElement) return null;
+            return {
+                row: parseInt(cellElement.dataset.row),
+                col: parseInt(cellElement.dataset.col),
+                element: cellElement
+            };
+        }
+
+        function handleMouseDown(e) {
+            e.preventDefault();
+            const cell = getCellFromEvent(e);
+            if (!cell) return;
+            activeState.isDown = true;
+            selectionStart = cell;
+            selectionEnd = cell;
+        }
+
+        function handleMouseMove(e) {
+            if (!activeState.isDown) return;
+            e.preventDefault();
+            activeState.isDragging = true;
+            const cell = getCellFromEvent(e);
+            if (cell && selectionEnd && (cell.row !== selectionEnd.row || cell.col !== selectionEnd.col)) {
+                selectionEnd = cell;
+                clearFirstClickHighlight();
+                firstClickCell = null;
+                highlightSelection();
+            }
+        }
+
+        function handleMouseUp(e) {
+            if (!activeState.isDown) return;
+            e.preventDefault();
+            if (activeState.isDragging) {
+                checkSelection();
+                clearSelectionHighlights();
+            } else {
+                handleCellClick(selectionStart);
+            }
+            activeState.isDown = false;
+            activeState.isDragging = false;
+        }
+
+        function handleTouchStart(e) {
+            if (e.touches.length >= 2) {
+                e.preventDefault();
+                activeState.isPanning = true;
+                activeState.isDown = false; 
+                activeState.isDragging = false;
+                clearSelectionHighlights();
+                
+                const t1 = e.touches[0];
+                const t2 = e.touches[1];
+                activeState.panStart = { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
+                activeState.scrollStart = { left: gridWrapper.scrollLeft, top: gridWrapper.scrollTop };
+                return; 
+            }
     
-    // --- EVENT LISTENERS ---
-    // Mouse events
-    gridElement.addEventListener('mousedown', handlePointerDown);
-    gridElement.addEventListener('mousemove', handlePointerMove);
-    gridElement.addEventListener('mouseup', handlePointerUp);
-    gridElement.addEventListener('mouseleave', () => {
-        isPointerDown = false;
-        isDragging = false;
+            if (e.touches.length === 1) {
+                if (!activeState.isPanning) {
+                    e.preventDefault();
+                    activeState.isDown = true;
+                    activeState.isDragging = false;
+                    const touch = e.touches[0];
+                    activeState.touchStartCoords = { x: touch.clientX, y: touch.clientY };
+                    selectionStart = getCellFromEvent(touch);
+                    selectionEnd = selectionStart;
+                }
+            }
+        }
+    
+        function handleTouchMove(e) {
+            if (activeState.isPanning && e.touches.length >= 2) {
+                e.preventDefault();
+                const t1 = e.touches[0];
+                const t2 = e.touches[1];
+                const currentPan = { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
+                const dx = currentPan.x - activeState.panStart.x;
+                const dy = currentPan.y - activeState.panStart.y;
+                gridWrapper.scrollLeft = activeState.scrollStart.left - dx;
+                gridWrapper.scrollTop = activeState.scrollStart.top - dy;
+            } else if (activeState.isDown && !activeState.isPanning) { 
+                e.preventDefault();
+                const touch = e.touches[0];
+
+                if (!activeState.isDragging) {
+                    const dx = touch.clientX - activeState.touchStartCoords.x;
+                    const dy = touch.clientY - activeState.touchStartCoords.y;
+                    if (Math.hypot(dx, dy) > DRAG_THRESHOLD) {
+                        activeState.isDragging = true;
+                        clearFirstClickHighlight();
+                        firstClickCell = null;
+                    }
+                }
+
+                if (activeState.isDragging) {
+                    const cell = getCellFromEvent(touch);
+                    if (cell && selectionEnd && (cell.row !== selectionEnd.row || cell.col !== selectionEnd.col)) {
+                        selectionEnd = cell;
+                        highlightSelection();
+                    }
+                }
+            }
+        }
+    
+        function handleTouchEnd(e) {
+            if (activeState.isDown && !activeState.isPanning) {
+                if (activeState.isDragging) {
+                    checkSelection();
+                    clearSelectionHighlights();
+                } else {
+                    handleCellClick(selectionStart);
+                }
+            }
+            
+            if (e.touches.length === 0) {
+                activeState.isDown = false;
+                activeState.isDragging = false;
+                activeState.isPanning = false;
+            } else if (e.touches.length === 1) {
+                activeState.isPanning = false;
+            }
+        }
+
+        function handleCellClick(cell) {
+            if (!cell) return;
+            if (!firstClickCell) {
+                firstClickCell = cell;
+                if (cell.element) cell.element.classList.add('first-click');
+            } else {
+                selectionStart = firstClickCell;
+                selectionEnd = cell;
+                checkSelection();
+                clearFirstClickHighlight();
+                firstClickCell = null;
+            }
+        }
+        
+        function clearFirstClickHighlight() {
+            const highlighted = document.querySelector('.first-click');
+            if (highlighted) highlighted.classList.remove('first-click');
+        }
+
+        function highlightSelection() {
+            clearSelectionHighlights();
+            const cellsToHighlight = getCellsBetween(selectionStart, selectionEnd);
+            cellsToHighlight.forEach(({ row, col }) => {
+                const cellEl = gridElement.querySelector(`[data-row='${row}'][data-col='${col}']`);
+                if (cellEl) cellEl.classList.add('selecting');
+            });
+        }
+        
+        function clearSelectionHighlights() {
+            document.querySelectorAll('.grid-cell.selecting').forEach(el => el.classList.remove('selecting'));
+        }
+
+        function getCellsBetween(start, end) {
+            const cells = [];
+            if (!start || !end) return cells;
+            let { row: r1, col: c1 } = start;
+            let { row: r2, col: c2 } = end;
+            const dx = Math.abs(c2 - c1), dy = Math.abs(r2 - r1);
+            if (r1 === r2 || c1 === c2 || dx === dy) {
+                const sx = Math.sign(c2 - c1), sy = Math.sign(r2 - r1);
+                const steps = Math.max(dx, dy);
+                for (let i = 0; i <= steps; i++) cells.push({ row: r1 + i * sy, col: c1 + i * sx });
+            } else {
+                cells.push({ row: r1, col: c1 });
+            }
+            return cells;
+        }
+
+        function checkSelection() {
+            if (!selectionStart || !selectionEnd) return;
+            const selStart = selectionStart;
+            const selEnd = selectionEnd;
+            // MODIFIED: Use wordsForCurrentGame
+            const wordFound = wordsForCurrentGame.find(w => {
+                if (!w.placed || foundWords.has(w.sanitized)) return false;
+                const forwardMatch = (selStart.row === w.start.row && selStart.col === w.start.col && selEnd.row === w.end.row && selEnd.col === w.end.col);
+                const backwardMatch = (selStart.row === w.end.row && selStart.col === w.end.col && selEnd.row === w.start.row && selEnd.col === w.start.col);
+                return forwardMatch || backwardMatch;
+            });
+            
+            if (wordFound) {
+                foundWords.add(wordFound.sanitized);
+                const selectedCells = getCellsBetween(selectionStart, selectionEnd);
+                markWordAsFound(selectedCells, wordFound);
+            }
+        }
+
+        function markWordAsFound(cells, word) {
+            drawWordOutline(cells);
+            renderWordList();
+            showDefinitionModal(word);
+        }
+
+        function drawWordOutline(cells) {
+            const startCell = gridElement.querySelector(`[data-row='${cells[0].row}'][data-col='${cells[0].col}']`);
+            const endCell = gridElement.querySelector(`[data-row='${cells[cells.length - 1].row}'][data-col='${cells[cells.length - 1].col}']`);
+            if (!startCell || !endCell) return;
+            
+            const cellWidth = startCell.offsetWidth;
+            const cellHeight = startCell.offsetHeight;
+            const startCenter = { x: startCell.offsetLeft + cellWidth / 2, y: startCell.offsetTop + cellHeight / 2 };
+            const endCenter = { x: endCell.offsetLeft + cellWidth / 2, y: endCell.offsetTop + cellHeight / 2 };
+
+            const angle = Math.atan2(endCenter.y - startCenter.y, endCenter.x - startCenter.x);
+            const distance = Math.hypot(endCenter.x - startCenter.x, endCenter.y - startCenter.y);
+            
+            const outlineWidth = distance + cellWidth;
+            const outlineHeight = cellHeight * 0.9;
+
+            const midPoint = { x: (startCenter.x + endCenter.x) / 2, y: (startCenter.y + endCenter.y) / 2 };
+            
+            const outline = document.createElement('div');
+            outline.classList.add('word-outline');
+            outline.style.width = `${outlineWidth}px`;
+            outline.style.height = `${outlineHeight}px`;
+            outline.style.left = `${midPoint.x - outlineWidth / 2}px`;
+            outline.style.top = `${midPoint.y - outlineHeight / 2}px`;
+            outline.style.transform = `rotate(${angle}rad)`;
+            outlineContainer.appendChild(outline);
+        }
+
+        // --- MODIFIED: showDefinitionModal now displays a single definition ---
+        function showDefinitionModal(word) {
+            modalWord.textContent = word.term;
+            modalInfo.innerHTML = `
+                <div>
+                    <span class="font-semibold text-gray-900">Definition:</span>
+                    <p class="mt-1 text-gray-600">${word.info.definition}</p>
+                </div>
+            `;
+            definitionModal.classList.remove('hidden');
+        }
+
+        function hideDefinitionModal() {
+            definitionModal.classList.add('hidden');
+            // MODIFIED: Use wordsForCurrentGame
+            if (foundWords.size === wordsForCurrentGame.filter(w => w.placed).length) {
+                setTimeout(() => winModal.classList.remove('hidden'), 200);
+            }
+        }
+        
+        function resetAndStartNewGame() {
+            winModal.classList.add('hidden');
+            initializeGame();
+        }
+
+        resetButton.addEventListener('click', initializeGame);
+        modalContinueBtn.addEventListener('click', hideDefinitionModal);
+        winNewGameBtn.addEventListener('click', resetAndStartNewGame);
+        
+        startGameBtn.addEventListener('click', () => {
+            rulesModal.classList.add('hidden');
+            initializeGame();
+        });
+
+        gridWrapper.addEventListener('mousedown', handleMouseDown);
+        gridWrapper.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        
+        gridWrapper.addEventListener('touchstart', handleTouchStart, { passive: false });
+        gridWrapper.addEventListener('touchmove', handleTouchMove, { passive: false });
+        gridWrapper.addEventListener('touchend', handleTouchEnd);
+        gridWrapper.addEventListener('touchcancel', handleTouchEnd);
+        
+        // --- NEW: Parse the words from the database on initial load ---
+        parseAllWords();
     });
-
-    // Touch events
-    gridElement.addEventListener('touchstart', (e) => {
-        if (e.touches.length === 2) {
-            isPanning = true;
-            const t1 = e.touches[0];
-            const t2 = e.touches[1];
-            initialPanMidpoint = { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
-            initialPanScroll = { left: gridContainer.scrollLeft, top: gridContainer.scrollTop };
-        } else if (e.touches.length === 1) {
-            handlePointerDown(e.touches[0]);
-        }
-    }, { passive: false });
-
-    gridElement.addEventListener('touchmove', (e) => {
-        e.preventDefault();
-        if (isPanning && e.touches.length === 2) {
-            const t1 = e.touches[0];
-            const t2 = e.touches[1];
-            const currentMidpoint = { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
-            const dx = currentMidpoint.x - initialPanMidpoint.x;
-            const dy = currentMidpoint.y - initialPanMidpoint.y;
-            gridContainer.scrollLeft = initialPanScroll.left - dx;
-            gridContainer.scrollTop = initialPanScroll.top - dy;
-        } else if (!isPanning && e.touches.length === 1) {
-            handlePointerMove(e.touches[0]);
-        }
-    }, { passive: false });
-
-    gridElement.addEventListener('touchend', (e) => {
-        if (isPanning && e.touches.length < 2) {
-            isPanning = false;
-        } else if (!isPanning && e.changedTouches.length === 1) {
-            handlePointerUp(e.changedTouches[0]);
-        }
-    });
-
-    newGameBtn.addEventListener('click', initializeGame);
-    playAgainBtn.addEventListener('click', () => { closeModal(winModal); initializeGame(); });
-    closeModalBtn.addEventListener('click', () => closeModal(definitionModal));
-    howToPlayBtn.addEventListener('click', () => openModal(howToPlayModal));
-    startGameBtn.addEventListener('click', () => closeModal(howToPlayModal));
-
-    // --- INITIALIZATION ---
-    const resizeObserver = new ResizeObserver(redrawAllOutlines);
-    resizeObserver.observe(gridContainer);
-
-    parseWords();
-    initializeGame();
-    openModal(howToPlayModal);
-});
-</script>
+    </script>
 
 </body>
 </html>
-

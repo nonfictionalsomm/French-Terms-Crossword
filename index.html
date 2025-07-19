@@ -11,7 +11,8 @@
     <style>
         body {
             font-family: 'Lato', sans-serif;
-            touch-action: none; /* Prevents browser default touch actions like scroll/zoom */
+            /* Prevent pull-to-refresh and other unwanted default touch actions on the body */
+            overscroll-behavior-y: contain;
         }
         h1, h2, h3, .font-serif {
             font-family: 'Cormorant Garamond', serif;
@@ -19,10 +20,11 @@
         /* Custom styles for the game grid */
         #grid-container {
             position: relative; /* Needed for SVG overlay */
-            touch-action: pan-x pan-y; /* Allow panning within this element */
             width: 100%;
             max-width: 90vh; /* Limit width to prevent extreme stretching on wide screens */
             margin: auto;
+            overflow: auto; /* Allow programmatic and two-finger scroll */
+            touch-action: none; /* Disable all default touch actions on the grid itself */
         }
         /* Enforce a square grid */
         #grid {
@@ -60,7 +62,10 @@
             text-decoration: line-through;
             color: #9ca3af; /* gray-400 */
         }
-        /* Custom scrollbar for word list */
+        /* Allow vertical scrolling on the word list */
+        #word-list-container {
+            touch-action: pan-y;
+        }
         #word-list-container::-webkit-scrollbar {
             width: 8px;
         }
@@ -184,10 +189,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let foundWordShapes = []; // Stores coords for redrawing outlines on resize
     
     // State for pointer interactions
-    let pointerDown = false;
+    let isPointerDown = false;
     let isDragging = false;
     let isPanning = false;
     let pointerStartPos = { x: 0, y: 0 };
+    let initialPanMidpoint = { x: 0, y: 0 };
+    let initialPanScroll = { left: 0, top: 0 };
     const DRAG_THRESHOLD = 10; // Pixels to move before it's a drag
 
     // --- HELPER FUNCTIONS ---
@@ -328,19 +335,18 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // --- SELECTION & INTERACTION LOGIC ---
-    const getCoordsFromPointerEvent = (e) => {
+    const getCoordsFromPointer = (e) => {
         const target = document.elementFromPoint(e.clientX, e.clientY);
         const cell = target?.closest('.grid-cell');
         if (!cell) return null;
         return { r: parseInt(cell.dataset.row), c: parseInt(cell.dataset.col) };
     };
 
-    const onPointerDown = (e) => {
-        if (isPanning) return;
-        pointerDown = true;
+    const handlePointerDown = (e) => {
+        isPointerDown = true;
         isDragging = false;
         pointerStartPos = { x: e.clientX, y: e.clientY };
-        const currentCoords = getCoordsFromPointerEvent(e);
+        const currentCoords = getCoordsFromPointer(e);
         if (!currentCoords) return;
 
         if (startCoords) { 
@@ -351,41 +357,35 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    const onPointerMove = (e) => {
-        if (!pointerDown || isPanning) return;
+    const handlePointerMove = (e) => {
+        if (!isPointerDown) return;
         const dx = Math.abs(e.clientX - pointerStartPos.x);
         const dy = Math.abs(e.clientY - pointerStartPos.y);
         if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
             isDragging = true;
         }
         if (isDragging && startCoords) {
-            const currentCoords = getCoordsFromPointerEvent(e);
+            const currentCoords = getCoordsFromPointer(e);
             if (currentCoords) {
                 highlightSelection(startCoords, currentCoords);
             }
         }
     };
 
-    const onPointerUp = (e) => {
-        if (isPanning) return;
-        const endCoords = getCoordsFromPointerEvent(e);
-        
+    const handlePointerUp = (e) => {
+        const endCoords = getCoordsFromPointer(e);
         if (isDragging) {
             if (startCoords && endCoords) {
                 handleSelection(startCoords, endCoords);
             }
-        } else if (pointerDown) {
-            // This was a tap. If startCoords is set, it's the first tap.
-            // The logic in onPointerDown will handle the second tap.
         }
-        
-        pointerDown = false;
+        isPointerDown = false;
         isDragging = false;
     };
     
     const handleSelection = (start, end) => {
         checkSelection(start, end);
-        startCoords = null; // Reset for the next selection
+        startCoords = null;
         clearAllHighlights();
     };
 
@@ -440,9 +440,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         let isReversed = false;
         const foundWord = wordsToFind.find(w => {
-            if (w.clean === selectedString) {
-                return true;
-            }
+            if (w.clean === selectedString) return true;
             if (w.clean === reversedSelectedString) {
                 isReversed = true;
                 return true;
@@ -452,9 +450,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (foundWord && !foundWord.found) {
             foundWord.found = true;
-            
             const shapeData = isReversed ? { start: end, end: start } : { start, end };
-            
             foundWordShapes.push(shapeData);
             drawWordOutline(shapeData);
             renderWordList(wordsForCurrentGame);
@@ -473,50 +469,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const cellWidth = gridRect.width / GRID_SIZE;
         const cellHeight = gridRect.height / GRID_SIZE;
 
-        // Calculate the center of the start and end cells in the grid's local coordinates
         const startX = (start.c + 0.5) * cellWidth;
         const startY = (start.r + 0.5) * cellHeight;
         const endX = (end.c + 0.5) * cellWidth;
         const endY = (end.r + 0.5) * cellHeight;
 
-        const dx = endX - startX;
-        const dy = endY - startY;
-        const angle = Math.atan2(dy, dx);
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', startX);
+        line.setAttribute('y1', startY);
+        line.setAttribute('x2', endX);
+        line.setAttribute('y2', endY);
+        line.setAttribute('stroke', '#ef4444');
+        line.setAttribute('stroke-width', cellHeight * 0.8);
+        line.setAttribute('stroke-linecap', 'round');
         
-        const capsuleHeight = cellHeight * 0.8; // Tighter fit
-        const radius = capsuleHeight / 2;
-        
-        // Perpendicular angle for calculating offsets
-        const perpAngle = angle + Math.PI / 2;
-        const offsetX = radius * Math.cos(perpAngle);
-        const offsetY = radius * Math.sin(perpAngle);
-
-        // Calculate the 4 corner points of the capsule's rectangular body
-        const p1 = { x: startX - offsetX, y: startY - offsetY };
-        const p2 = { x: endX - offsetX,   y: endY - offsetY   };
-        const p3 = { x: endX + offsetX,   y: endY + offsetY   };
-        const p4 = { x: startX + offsetX, y: startY + offsetY };
-
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        
-        // Construct the SVG path data string.
-        // M = Move to, L = Line to, A = Arc
-        // The 'A' command parameters are: rx, ry, x-axis-rotation, large-arc-flag, sweep-flag, x, y
-        const pathData = `
-            M ${p1.x} ${p1.y}
-            L ${p2.x} ${p2.y}
-            A ${radius} ${radius} 0 0 1 ${p3.x} ${p3.y}
-            L ${p4.x} ${p4.y}
-            A ${radius} ${radius} 0 0 1 ${p1.x} ${p1.y}
-            Z
-        `;
-        
-        path.setAttribute('d', pathData);
-        path.setAttribute('fill', 'none');
-        path.setAttribute('stroke', '#ef4444');
-        path.setAttribute('stroke-width', '2.5');
-        
-        gridOverlay.appendChild(path);
+        gridOverlay.appendChild(line);
     };
 
     const redrawAllOutlines = () => {
@@ -525,21 +492,48 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // --- EVENT LISTENERS ---
-    gridElement.addEventListener('pointerdown', onPointerDown);
-    gridElement.addEventListener('pointermove', onPointerMove);
-    gridElement.addEventListener('pointerup', onPointerUp);
-    gridElement.addEventListener('pointerleave', onPointerUp);
+    // Mouse events
+    gridElement.addEventListener('mousedown', handlePointerDown);
+    gridElement.addEventListener('mousemove', handlePointerMove);
+    gridElement.addEventListener('mouseup', handlePointerUp);
+    gridElement.addEventListener('mouseleave', () => {
+        isPointerDown = false;
+        isDragging = false;
+    });
 
+    // Touch events
     gridElement.addEventListener('touchstart', (e) => {
-        if (e.touches.length > 1) {
+        if (e.touches.length === 2) {
             isPanning = true;
-            clearAllHighlights();
-            startCoords = null;
+            const t1 = e.touches[0];
+            const t2 = e.touches[1];
+            initialPanMidpoint = { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
+            initialPanScroll = { left: gridContainer.scrollLeft, top: gridContainer.scrollTop };
+        } else if (e.touches.length === 1) {
+            handlePointerDown(e.touches[0]);
         }
     }, { passive: false });
+
+    gridElement.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        if (isPanning && e.touches.length === 2) {
+            const t1 = e.touches[0];
+            const t2 = e.touches[1];
+            const currentMidpoint = { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
+            const dx = currentMidpoint.x - initialPanMidpoint.x;
+            const dy = currentMidpoint.y - initialPanMidpoint.y;
+            gridContainer.scrollLeft = initialPanScroll.left - dx;
+            gridContainer.scrollTop = initialPanScroll.top - dy;
+        } else if (!isPanning && e.touches.length === 1) {
+            handlePointerMove(e.touches[0]);
+        }
+    }, { passive: false });
+
     gridElement.addEventListener('touchend', (e) => {
-        if (e.touches.length < 2) {
+        if (isPanning && e.touches.length < 2) {
             isPanning = false;
+        } else if (!isPanning && e.changedTouches.length === 1) {
+            handlePointerUp(e.changedTouches[0]);
         }
     });
 
@@ -551,7 +545,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- INITIALIZATION ---
     const resizeObserver = new ResizeObserver(redrawAllOutlines);
-    resizeObserver.observe(gridContainer); // Observe the container for more reliable resize events
+    resizeObserver.observe(gridContainer);
 
     parseWords();
     initializeGame();
@@ -561,3 +555,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </body>
 </html>
+
